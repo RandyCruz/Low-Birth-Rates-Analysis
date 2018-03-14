@@ -1,0 +1,160 @@
+---
+title: "Low Birth Rates Analysis_US"
+output: html_notebook
+---
+#Introduction 
+
+What is the relationship between low birth rates and smoking and alcohol consumption in the U.S.? It is important to note that is aggregate data and not individual cases.
+```{r}
+library(nlme)
+library(dplyr)
+library(magrittr)
+library(tidyr)
+library(haven)
+library(lmerTest)
+library(ggplot2)
+library(texreg)
+```
+
+```{r}
+library(radiant.data)
+library(readr)
+  lbr1 <- read_csv("/Users/racruz/Desktop/lbr.csv", col_names = TRUE)
+   head(lbr1)
+```
+
+#Preparing Data for Analysis
+
+```{r}
+
+lbr1 <- rename(lbr1, state = Geo_STATE, county = Geo_COUNTY, lowbirth = SE_NV002_001,smokers = SE_T011_001,alcohol = SE_T011_002)
+
+```
+
+#Data Cleaning
+Originally the data contained 3141 observations. After running na.omit the leftover cases were 3041 observations.
+```{r}
+lbr1<-na.omit(lbr1)
+head(lbr1)
+```
+
+#Preliminary Investigation of "Low Birth Rate In The U.S"
+
+```{r}
+ggplot(lbr1, aes(x = lowbirth, y = state)) + geom_jitter(alpha = 0.5)
+
+ggplot(lbr1, aes(x = lowbirth, y = smokers*alcohol)) + geom_jitter(alpha = 0.5)
+
+ggplot(lbr1, aes(x = lowbirth, y = smokers, color = "Respondents")) + geom_jitter(alpha = 0.5)
+
+ggplot(lbr1, aes(x = lowbirth, y = alcohol, color = "Respondents")) + geom_jitter(alpha = 0.5)
+
+```
+
+#MULTI-LEVEL ANALYSIS X RANDOM EFFECTS
+In understanding low birth rates in the U.S I am using state as higher level observation.
+
+
+#Complete pooling
+Model 1 displays that the lowbirth intercept is 2416.17. Smokers have less of an impact on low birth rate than alcohol consumers with a value of (-95.11). In contrast alcohol consumers have more of an impact on low birth rates in the U.S with a value of 6.19.
+
+```{r}
+ lbreg <- lm(lowbirth ~ smokers + alcohol, data = lbr1)
+screenreg(lbreg)
+visreg::visreg(lbreg)
+```
+
+```{r, message=FALSE, warning=FALSE, results="asis"}
+htmlreg(list(lbreg))
+```
+
+
+#Smokers X Alcohol Interaction
+As we see this model displays a low birth intercept of 1497.37. Smokers have less impact on low birth weight than alcohol consumers with a value of (-41.50) and alcohol consumers with a value of (70.46). When the interacton term is introduced we see that smokers and alcohol cosumers have a slightly negative impact on low birth weights in the U.S.
+
+```{r}
+lbr3 <- gls(lowbirth ~ smokers*alcohol, data = lbr1, method = "ML")
+screenreg(lbr3)
+plot(lbr3)
+
+```
+
+
+```{r, message=FALSE, warning=FALSE, results="asis"}
+htmlreg(list(lbr3))
+```
+
+
+#No Pooling
+Intercept of low birth rates in the U.S range from 1,000 to 5,000 by states when looking at smokers.
+
+```{r}
+
+dcoef <- lbr1 %>% 
+    group_by(state) %>% 
+    do(mod = lm(lowbirth ~ smokers, data = .))
+coef <- dcoef %>% do(data.frame(intc = coef(.$mod)[1]))
+ggplot(coef, aes(x = intc)) + geom_histogram(color = "black", fill = "aqua marine1")
+
+```
+
+
+#No plotting: Plotting the slopes
+The relationship between smokers and low birth weight  will vary by state. Some will display a more a negative relationship and others will display a negative relationship however, it seems in this distribution it will more likely display a negative intercept.
+
+
+```{r}
+dcoef <- lbr1 %>% 
+    group_by(state) %>% 
+    do(mod = lm(lowbirth ~ smokers, data = .))
+coef <- dcoef %>% do(data.frame(smokers = coef(.$mod)[2]))
+ggplot(coef, aes(x = smokers)) + geom_histogram(color = "orange", fill = "purple")
+```
+
+
+
+
+
+
+#Partial Pooling
+Accounting for lowbirth weight variations between states. We see consistent relationships with the models above. 
+
+
+```{r}
+m1_lme <- lme(lowbirth ~ smokers, data = lbr1, random = ~1|state, method = "ML")
+summary(m1_lme)
+screenreg(m1_lme)
+```
+
+
+```{r}
+m2_lme <- lme(lowbirth ~ alcohol, data = lbr1, random = ~ alcohol|state, method = "ML")
+summary(m2_lme)
+screenreg(m2_lme)
+
+```
+
+```{r}
+AIC(lbr3, m1_lme, m2_lme)
+```
+
+```{r}
+m3_lme <- lme(lowbirth ~ smokers + alcohol, data = lbr1, random = ~ alcohol|state, method = "ML")
+summary(m3_lme)
+screenreg(m3_lme)
+```
+
+```{r}
+m4_lme <- lme(lowbirth ~ smokers*alcohol, data = lbr1, random = ~ alcohol|state, method = "ML")
+summary(m4_lme)
+plot(m4_lme)
+screenreg(m4_lme)
+```
+#Model Fit
+Strongest model that fits this data seems to be m3_lme.
+```{r}
+AIC(lbr3, m1_lme, m2_lme, m3_lme, m4_lme)
+
+```
+
+
